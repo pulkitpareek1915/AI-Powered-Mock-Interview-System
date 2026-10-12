@@ -25,7 +25,7 @@ authRouter.post("/login", authController.loginUserController)
  * @description clear token from user cookie and add the token in blacklist
  * @access public
  */
-authRouter.get("/logout", authController.logoutUserController)
+authRouter.post("/logout", authMiddleware.authUser, authController.logoutUserController)
 
 
 /**
