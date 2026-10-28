@@ -30,11 +30,23 @@ async function registerUserController(req, res) {
 
     const hash = await bcrypt.hash(password, 10)
 
-    const user = await userModel.create({
-        username,
-        email,
-        password: hash
-    })
+    let user
+    try {
+        user = await userModel.create({
+            username,
+            email,
+            password: hash
+        })
+    } catch (err) {
+        // 11000 = duplicate key error from the unique index (the race was caught here)
+        if (err.code === 11000) {
+            const field = Object.keys(err.keyPattern || {})[0] || "username or email"
+            return res.status(409).json({
+                message: `An account with this ${field} already exists`
+            })
+        }
+        throw err   // anything else: Express 5 passes it to the error handler (500)
+    }
 
     const token = jwt.sign(
         { id: user._id, username: user.username },
