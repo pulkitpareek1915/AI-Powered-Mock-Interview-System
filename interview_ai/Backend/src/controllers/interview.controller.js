@@ -1,17 +1,56 @@
 const pdfParse = require("pdf-parse")
+const crypto = require("crypto")   
 const { generateInterviewReport, generateResumePdf } = require("../services/ai.service")
 const interviewReportModel = require("../models/interviewReport.model")
 
 
-
+// removes harmless differences (extra spaces, line breaks) before hashing
+const normalize = (s = "") => s.trim().replace(/\s+/g, " ")
 
 /**
  * @description Controller to generate interview report based on user self description, resume and job description.
  */
 async function generateInterViewReportController(req, res) {
+    
 
-    const resumeContent = await (new pdfParse.PDFParse(Uint8Array.from(req.file.buffer))).getText()
+    
     const { selfDescription, jobDescription } = req.body
+
+    //  basic input checks (jobDescription is required by the schema)
+    if (!jobDescription) {
+        return res.status(400).json({ message: "Job description is required." })
+    }
+
+    //  do not crash when no file is uploaded (self-description-only path)
+    let resumeText = ""
+    if (req.file) {
+        const resumeContent = await (new pdfParse.PDFParse(Uint8Array.from(req.file.buffer))).getText()
+        resumeText = resumeContent.text
+    }
+
+    if (!resumeText && !selfDescription) {
+        return res.status(400).json({ message: "Provide a resume or a self description." })
+    }
+
+
+     //  fingerprint of the three inputs (SHA-256, not bcrypt, so the same input gives the same hash)
+    const inputHash = crypto
+        .createHash("sha256")
+        .update(JSON.stringify([
+            normalize(resumeText),
+            normalize(selfDescription),
+            normalize(jobDescription)
+        ]))
+        .digest("hex")
+
+   
+    const existing = await interviewReportModel.findOne({ user: req.user.id, inputHash })
+    if (existing) {
+        return res.status(200).json({
+            message: "Report already exists for this resume and job description.",
+            interviewReport: existing
+        })
+    }
 
     const interViewReportByAi = await generateInterviewReport({
         resume: resumeContent.text,
@@ -19,19 +58,33 @@ async function generateInterViewReportController(req, res) {
         jobDescription
     })
 
-    const interviewReport = await interviewReportModel.create({
-        user: req.user.id,
-        resume: resumeContent.text,
-        selfDescription,
-        jobDescription,
-        ...interViewReportByAi
-    })
+     //  try/catch for the duplicate-key race, and trusted fields after the AI spread
+    let interviewReport
+    try {
+        interviewReport = await interviewReportModel.create({
+            ...interViewReportByAi,
+            user: req.user.id,
+            resume: resumeText,
+            selfDescription,
+            jobDescription,
+            inputHash                                                        // NEW
+        })
+    } catch (err) {
+        // an identical request saved first, so return that one
+        if (err.code === 11000) {
+            const winner = await interviewReportModel.findOne({ user: req.user.id, inputHash })
+            return res.status(200).json({
+                message: "Report already exists for this resume and job description.",
+                interviewReport: winner
+            })
+        }
+        throw err
+    }
 
     res.status(201).json({
         message: "Interview report generated successfully.",
         interviewReport
     })
-
 }
 
 /**
