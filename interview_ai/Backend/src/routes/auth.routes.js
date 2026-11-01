@@ -1,7 +1,7 @@
 const { Router } = require('express')
 const authController = require("../controllers/auth.controller")
 const authMiddleware = require("../middlewares/auth.middleware")
-
+const { registerSchema, loginSchema, validate } = require("../validators/auth.validator")
 const authRouter = Router()
 
 /**
@@ -9,7 +9,7 @@ const authRouter = Router()
  * @description Register a new user
  * @access Public
  */
-authRouter.post("/register", authController.registerUserController)
+authRouter.post("/register", validate(registerSchema), authController.registerUserController)
 
 
 /**
@@ -17,13 +17,13 @@ authRouter.post("/register", authController.registerUserController)
  * @description login user with email and password
  * @access Public
  */
-authRouter.post("/login", authController.loginUserController)
+authRouter.post("/login", validate(loginSchema), authController.loginUserController)
 
 
 /**
- * @route GET /api/auth/logout
+ * @route post /api/auth/logout
  * @description clear token from user cookie and add the token in blacklist
- * @access public
+ * @access private
  */
 authRouter.post("/logout", authMiddleware.authUser, authController.logoutUserController)
 
