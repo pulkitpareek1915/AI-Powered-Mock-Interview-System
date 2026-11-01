@@ -2,6 +2,7 @@ const { Router } = require('express')
 const authController = require("../controllers/auth.controller")
 const authMiddleware = require("../middlewares/auth.middleware")
 const { registerSchema, loginSchema, validate } = require("../validators/auth.validator")
+const { loginLimiter, registerLimiter } = require("../middlewares/rateLimit.middleware")
 const authRouter = Router()
 
 /**
@@ -9,7 +10,7 @@ const authRouter = Router()
  * @description Register a new user
  * @access Public
  */
-authRouter.post("/register", validate(registerSchema), authController.registerUserController)
+authRouter.post("/register", registerLimiter, validate(registerSchema), authController.registerUserController)
 
 
 /**
@@ -17,7 +18,7 @@ authRouter.post("/register", validate(registerSchema), authController.registerUs
  * @description login user with email and password
  * @access Public
  */
-authRouter.post("/login", validate(loginSchema), authController.loginUserController)
+authRouter.post("/login",    loginLimiter,    validate(loginSchema),    authController.loginUserController)
 
 
 /**
