@@ -13,6 +13,16 @@ async function authUser(req, res, next) {
         })
     }
 
+
+        // 1. verify first: cheap, no database read, and pinned algorithm blocks "alg: none"
+    let decoded
+    try {
+        decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] })
+    } catch (err) {
+        return res.status(401).json({ message: "Invalid or expired token." })
+    }
+
+     // 2. only then check the blacklist
     const isTokenBlacklisted = await tokenBlacklistModel.findOne({
         token
     })
@@ -23,19 +33,9 @@ async function authUser(req, res, next) {
         })
     }
 
-    try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET)
-
-        req.user = decoded
-
-        next()
-
-    } catch (err) {
-
-        return res.status(401).json({
-            message: "Invalid token."
-        })
-    }
+    req.user = decoded
+    req.token = token          
+    next()
 
 }
 
