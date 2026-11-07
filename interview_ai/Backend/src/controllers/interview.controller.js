@@ -1,6 +1,7 @@
 const pdfParse = require("pdf-parse")
 const crypto = require("crypto")   
-const { generateInterviewReport, generateResumePdf } = require("../services/ai.service")
+const { generateInterviewReport, generateResumeHtml } = require("../services/ai.service")
+const { renderPdfFromHtml } = require("../services/pdf.service")
 const interviewReportModel = require("../models/interviewReport.model")
 
 
@@ -127,21 +128,43 @@ async function getAllInterviewReportsController(req, res) {
  */
 async function generateResumePdfController(req, res) {
     const { interviewReportId } = req.params
+    const regenerate = req.query.regenerate === "true"
 
-    const interviewReport = await interviewReportModel.findOne({
-    _id: interviewReportId,
-    user: req.user.id
-    })
+    const interviewReport = await interviewReportModel
+        .findOne({ _id: interviewReportId, user: req.user.id })
+        .select("+resumeHtml")                       // the field is hidden by default
 
     if (!interviewReport) {
-        return res.status(404).json({
-            message: "Interview report not found."
-        })
+        return res.status(404).json({ message: "Interview report not found." })
     }
 
-    const { resume, jobDescription, selfDescription } = interviewReport
+    let html = interviewReport.resumeHtml
 
-    const pdfBuffer = await generateResumePdf({ resume, jobDescription, selfDescription })
+    // call Gemini only if there is no saved resume, or the user explicitly asked for a new one
+    if (!html || regenerate) {
+        const { resume, jobDescription, selfDescription } = interviewReport
+        const generated = await generateResumeHtml({ resume, jobDescription, selfDescription })
+
+        if (regenerate) {
+            await interviewReportModel.updateOne(
+                { _id: interviewReportId, user: req.user.id },
+                { $set: { resumeHtml: generated } }
+            )
+            html = generated
+        } else {
+            // only the first writer wins, so two simultaneous first clicks still end up with one resume
+            await interviewReportModel.updateOne(
+                { _id: interviewReportId, user: req.user.id, resumeHtml: { $exists: false } },
+                { $set: { resumeHtml: generated } }
+            )
+            const saved = await interviewReportModel
+                .findOne({ _id: interviewReportId, user: req.user.id })
+                .select("+resumeHtml")
+            html = saved.resumeHtml
+        }
+    }
+
+    const pdfBuffer = await renderPdfFromHtml(html)
 
     res.set({
         "Content-Type": "application/pdf",
