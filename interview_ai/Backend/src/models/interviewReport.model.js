@@ -88,9 +88,13 @@ const interviewReportSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: "users"
     },
-    title: {
+   title: {
         type: String,
         required: [ true, "Job title is required" ]
+    },
+    resumeHtml: {
+        type: String,
+        select: false          // hidden by default, so list and report endpoints don't carry it
     }
 }, {
     timestamps: true
